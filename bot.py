@@ -17,7 +17,7 @@ if not TOKEN:
 if not OWNER_KEY:
     raise ValueError("OWNER_KEY not found in .env")
 
-API_BASE = "https://v0-key-system-validation.vercel.app/owner"
+API_BASE = "https://v0-key-system-validation.vercel.app/api/owner"
 
 intents = discord.Intents.default()
 
