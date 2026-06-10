@@ -33,7 +33,7 @@ async def on_ready():
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands.")
     except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        print(f"Sync error: {e}")
 
     print(f"Logged in as {bot.user}")
 
@@ -67,23 +67,18 @@ async def createkey(
             ) as response:
                 data = await response.json()
 
-        if not data.get("valid"):
-            await interaction.followup.send(
-                "❌ Invalid owner key.",
-                ephemeral=True
-            )
-            return
-
-        key = data.get("key")
+        print("========== CREATE RESPONSE ==========")
+        print(data)
+        print("=====================================")
 
         await interaction.followup.send(
-            f"✅ Key created!\n\n`{key}`",
+            f"```json\n{data}\n```",
             ephemeral=True
         )
 
     except Exception as e:
         await interaction.followup.send(
-            f"❌ Error: `{e}`",
+            f"❌ Error:\n```{e}```",
             ephemeral=True
         )
 
@@ -105,6 +100,10 @@ async def listkeys(interaction: discord.Interaction):
             ) as response:
                 data = await response.json()
 
+        print("========== LIST RESPONSE ==========")
+        print(data)
+        print("===================================")
+
         if not data.get("valid"):
             await interaction.followup.send(
                 "❌ Invalid owner key.",
@@ -113,6 +112,13 @@ async def listkeys(interaction: discord.Interaction):
             return
 
         keys = data.get("keys", [])
+
+        if not keys:
+            await interaction.followup.send(
+                "No keys found.",
+                ephemeral=True
+            )
+            return
 
         output = []
 
@@ -127,13 +133,6 @@ async def listkeys(interaction: discord.Interaction):
             output.append(
                 f"🔑 `{key}` | {class_type} | HWID: {hwid or 'None'}"
             )
-
-        if not output:
-            await interaction.followup.send(
-                "No keys found.",
-                ephemeral=True
-            )
-            return
 
         text = "\n".join(output)
 
@@ -161,7 +160,7 @@ async def listkeys(interaction: discord.Interaction):
 
     except Exception as e:
         await interaction.followup.send(
-            f"❌ Error: `{e}`",
+            f"❌ Error:\n```{e}```",
             ephemeral=True
         )
 
