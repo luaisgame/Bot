@@ -1,77 +1,169 @@
 import os
-import json
-import secrets
-import string
-
+import aiohttp
 import discord
+
+from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-from dotenv import load_dotenv
 
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+OWNER_KEY = os.getenv("OWNER_KEY")
 
-KEYS_FILE = "keys.json"
+if not TOKEN:
+    raise ValueError("DISCORD_TOKEN not found in .env")
 
-# Create file if it doesn't exist
-if not os.path.exists(KEYS_FILE):
-    with open(KEYS_FILE, "w") as f:
-        json.dump([], f)
+if not OWNER_KEY:
+    raise ValueError("OWNER_KEY not found in .env")
 
-def load_keys():
-    with open(KEYS_FILE, "r") as f:
-        return json.load(f)
-
-def save_keys(keys):
-    with open(KEYS_FILE, "w") as f:
-        json.dump(keys, f, indent=4)
-
-def generate_key(length=20):
-    chars = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(chars) for _ in range(length))
+API_BASE = "https://v0-key-system-validation.vercel.app/owner"
 
 intents = discord.Intents.default()
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
 
 @bot.event
 async def on_ready():
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands")
+        print(f"Synced {len(synced)} slash commands.")
     except Exception as e:
-        print(e)
+        print(f"Failed to sync commands: {e}")
 
     print(f"Logged in as {bot.user}")
 
-@bot.tree.command(name="createkey", description="Create a new key")
-async def createkey(interaction: discord.Interaction):
-    key = generate_key()
 
-    keys = load_keys()
-    keys.append(key)
-    save_keys(keys)
+@app_commands.choices(
+    class_type=[
+        app_commands.Choice(name="Developer", value="Developer"),
+        app_commands.Choice(name="Premium", value="Premium"),
+        app_commands.Choice(name="Staff", value="Staff"),
+        app_commands.Choice(name="Tester", value="Tester"),
+    ]
+)
+@bot.tree.command(
+    name="createkey",
+    description="Create a new key"
+)
+async def createkey(
+    interaction: discord.Interaction,
+    class_type: app_commands.Choice[str]
+):
+    await interaction.response.defer(ephemeral=True)
 
-    await interaction.response.send_message(
-        f"✅ Key created: `{key}`",
-        ephemeral=True
-    )
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{API_BASE}/create",
+                json={
+                    "ownerKey": OWNER_KEY,
+                    "classType": class_type.value
+                }
+            ) as response:
+                data = await response.json()
 
-@bot.tree.command(name="listkeys", description="List all keys")
-async def listkeys(interaction: discord.Interaction):
-    keys = load_keys()
+        if not data.get("valid"):
+            await interaction.followup.send(
+                "❌ Invalid owner key.",
+                ephemeral=True
+            )
+            return
 
-    if not keys:
-        await interaction.response.send_message(
-            "No keys found.",
+        key = data.get("key")
+
+        await interaction.followup.send(
+            f"✅ Key created!\n\n`{key}`",
             ephemeral=True
         )
-        return
 
-    await interaction.response.send_message(
-        "\n".join(f"`{k}`" for k in keys),
-        ephemeral=True
-    )
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error: `{e}`",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(
+    name="listkeys",
+    description="List all keys"
+)
+async def listkeys(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{API_BASE}/list",
+                json={
+                    "ownerKey": OWNER_KEY
+                }
+            ) as response:
+                data = await response.json()
+
+        if not data.get("valid"):
+            await interaction.followup.send(
+                "❌ Invalid owner key.",
+                ephemeral=True
+            )
+            return
+
+        keys = data.get("keys", [])
+
+        output = []
+
+        for entry in keys:
+            if entry.get("owner"):
+                continue
+
+            key = entry.get("key", "Unknown")
+            class_type = entry.get("classType", "Unknown")
+            hwid = entry.get("hwid")
+
+            output.append(
+                f"🔑 `{key}` | {class_type} | HWID: {hwid or 'None'}"
+            )
+
+        if not output:
+            await interaction.followup.send(
+                "No keys found.",
+                ephemeral=True
+            )
+            return
+
+        text = "\n".join(output)
+
+        if len(text) <= 1900:
+            await interaction.followup.send(
+                text,
+                ephemeral=True
+            )
+        else:
+            chunks = [
+                text[i:i + 1900]
+                for i in range(0, len(text), 1900)
+            ]
+
+            await interaction.followup.send(
+                chunks[0],
+                ephemeral=True
+            )
+
+            for chunk in chunks[1:]:
+                await interaction.followup.send(
+                    chunk,
+                    ephemeral=True
+                )
+
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Error: `{e}`",
+            ephemeral=True
+        )
+
 
 bot.run(TOKEN)
