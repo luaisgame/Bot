@@ -20,14 +20,13 @@ OWNER_DISCORD_IDS = {
 }
 
 STAFF_ROLE_ID = 1458539044014391306
+MAX_CREATE_AMOUNT = 25
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "linked_keys.db"))
 
 API_BASE = "https://key-system-api.luaisgame.workers.dev/api"
 OWNER_API = f"{API_BASE}/owner"
-
-MAX_CREATE_AMOUNT = 25
 
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN missing")
@@ -199,7 +198,7 @@ async def on_ready():
 async def createkey(
     interaction: discord.Interaction,
     class_type: app_commands.Choice[str],
-    amount: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
+    quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
 ):
     if not isinstance(interaction.user, discord.Member):
         await interaction.response.send_message(
@@ -226,8 +225,9 @@ async def createkey(
 
     created_keys = []
     failed = 0
+    errors = []
 
-    for _ in range(amount):
+    for _ in range(quantity):
         status, data = await api_post(
             f"{OWNER_API}/create",
             {
@@ -240,19 +240,26 @@ async def createkey(
             created_keys.append(data["key"])
         else:
             failed += 1
+            errors.append(str(data))
 
     if not created_keys:
         await interaction.followup.send(
-            embed=error_embed("Key Creation Failed", "No keys were created.")
+            embed=error_embed(
+                "Key Creation Failed",
+                f"No keys were created.\n```{chr(10).join(errors)[:3000]}```"
+            )
         )
         return
 
+    key_text = "\n".join(created_keys)
+
     embed = success_embed(
         f"✅ Created {len(created_keys)} Key{'s' if len(created_keys) != 1 else ''}",
-        f"```{chr(10).join(created_keys)}```"
+        f"```{key_text}```"
     )
 
     embed.add_field(name="Type", value=class_type.value, inline=True)
+    embed.add_field(name="Quantity", value=str(len(created_keys)), inline=True)
     embed.add_field(name="Created By", value=interaction.user.mention, inline=True)
 
     if failed:
@@ -315,7 +322,7 @@ async def listkeys(interaction: discord.Interaction):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="redeem", description="Link yourself to a key")
+@bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
     await interaction.response.defer(ephemeral=True)
 
@@ -437,6 +444,7 @@ async def resethwid(interaction: discord.Interaction, key: str = None):
             )
             return
 
+    key = key.strip()
     owned_keys = [row[0] for row in keys]
 
     if key not in owned_keys:
