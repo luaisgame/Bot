@@ -24,7 +24,7 @@ STAFF_ROLE_ID = 1458539044014391306
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "linked_keys.db"))
 
-API_BASE = "https://v0-key-system-validation.vercel.app/api"
+API_BASE = "https://key-system-api.luaisgame.workers.dev/api"
 OWNER_API = f"{API_BASE}/owner"
 
 MAX_CREATE_AMOUNT = 25
