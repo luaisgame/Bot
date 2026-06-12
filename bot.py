@@ -30,6 +30,8 @@ if not OWNER_KEY:
     raise ValueError("OWNER_KEY missing")
 
 intents = discord.Intents.default()
+intents.guilds = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
@@ -42,19 +44,11 @@ def has_create_role(member: discord.Member):
 
 
 def success_embed(title, description):
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=discord.Color.green()
-    )
+    return discord.Embed(title=title, description=description, color=discord.Color.green())
 
 
 def error_embed(title, description):
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=discord.Color.red()
-    )
+    return discord.Embed(title=title, description=description, color=discord.Color.red())
 
 
 async def api_post(url: str, payload: dict):
@@ -65,10 +59,7 @@ async def api_post(url: str, payload: dict):
             try:
                 data = await response.json()
             except Exception:
-                data = {
-                    "valid": False,
-                    "message": text
-                }
+                data = {"valid": False, "message": text}
 
             print("API URL:", url)
             print("API STATUS:", response.status)
@@ -89,7 +80,8 @@ async def on_ready():
     print("BOT STARTED")
     print("User:", bot.user)
     print("API:", API_BASE)
-    print("OWNER_KEY:", repr(OWNER_KEY))
+    print("OWNER IDS:", OWNER_DISCORD_IDS)
+    print("OWNER KEY:", repr(OWNER_KEY))
     print("=" * 50)
 
 
@@ -109,7 +101,7 @@ async def createkey(
 ):
     if not isinstance(interaction.user, discord.Member):
         await interaction.response.send_message(
-            embed=error_embed("Error", "Use this inside a server."),
+            embed=error_embed("Error", "Use this command inside a server."),
             ephemeral=True
         )
         return
@@ -131,7 +123,6 @@ async def createkey(
     await interaction.response.defer(ephemeral=False)
 
     created = []
-    failed = 0
     errors = []
 
     for _ in range(quantity):
@@ -146,13 +137,12 @@ async def createkey(
         if status == 200 and data.get("valid") and data.get("key"):
             created.append(data["key"])
         else:
-            failed += 1
             errors.append(str(data))
 
     if not created:
         await interaction.followup.send(
             embed=error_embed(
-                "Failed",
+                "Key Creation Failed",
                 f"No keys were created.\n```{chr(10).join(errors)[:3000]}```"
             )
         )
@@ -167,8 +157,8 @@ async def createkey(
     embed.add_field(name="Quantity", value=str(len(created)), inline=True)
     embed.add_field(name="Created By", value=interaction.user.mention, inline=True)
 
-    if failed:
-        embed.add_field(name="Failed", value=str(failed), inline=True)
+    if errors:
+        embed.add_field(name="Failed", value=str(len(errors)), inline=True)
 
     await interaction.followup.send(embed=embed)
 
@@ -209,7 +199,9 @@ async def listkeys(interaction: discord.Interaction):
 
     for k in keys:
         lines.append(
-            f"`{k['key']}`\nType: **{k['classType']}** | HWID: `{k.get('hwid') or 'None'}`"
+            f"`{k.get('key', 'Unknown')}`\n"
+            f"Type: **{k.get('classType', 'Unknown')}** | "
+            f"HWID: `{k.get('hwid') or 'None'}`"
         )
 
     text = "\n\n".join(lines)
@@ -248,7 +240,7 @@ async def redeem(interaction: discord.Interaction, key: str):
     await interaction.followup.send(
         embed=success_embed(
             "✅ Key Redeemed",
-            f"Key: `{data['key']}`\nType: **{data['classType']}**"
+            f"Key: `{data.get('key')}`\nType: **{data.get('classType')}**"
         ),
         ephemeral=True
     )
@@ -263,6 +255,13 @@ async def mykeys(interaction: discord.Interaction):
         {"userId": str(interaction.user.id)}
     )
 
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Failed", data.get("message", "Could not load keys.")),
+            ephemeral=True
+        )
+        return
+
     keys = data.get("keys", [])
 
     if not keys:
@@ -273,18 +272,21 @@ async def mykeys(interaction: discord.Interaction):
         return
 
     text = "\n\n".join(
-        f"`{k['key']}`\nType: **{k['classType']}**"
+        f"`{k.get('key')}`\nType: **{k.get('classType', 'Unknown')}**"
         for k in keys
     )
 
-    await interaction.followup.send(
-        embed=discord.Embed(
-            title="🔑 Your Keys",
-            description=text[:4000],
-            color=discord.Color.blurple()
-        ),
-        ephemeral=True
-    )
+    chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)]
+
+    for i, chunk in enumerate(chunks, start=1):
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title=f"🔑 Your Keys {i}/{len(chunks)}",
+                description=chunk,
+                color=discord.Color.blurple()
+            ),
+            ephemeral=True
+        )
 
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
@@ -339,16 +341,16 @@ async def keyinfo(interaction: discord.Interaction, key: str):
         )
         return
 
-    k = data["keyData"]
+    k = data.get("keyData", {})
     redeemed = data.get("redeemed")
 
     embed = discord.Embed(title="🔎 Key Info", color=discord.Color.blurple())
-    embed.add_field(name="Key", value=f"`{k['key']}`", inline=False)
-    embed.add_field(name="Type", value=k["classType"], inline=True)
+    embed.add_field(name="Key", value=f"`{k.get('key', key)}`", inline=False)
+    embed.add_field(name="Type", value=k.get("classType", "Unknown"), inline=True)
     embed.add_field(name="HWID", value=f"`{k.get('hwid') or 'None'}`", inline=True)
 
     if redeemed:
-        embed.add_field(name="Redeemed By", value=f"<@{redeemed['userId']}>", inline=False)
+        embed.add_field(name="Redeemed By", value=f"<@{redeemed.get('userId')}>", inline=False)
     else:
         embed.add_field(name="Redeemed", value="No", inline=False)
 
@@ -402,7 +404,7 @@ async def uploadscript(
 
     await interaction.response.defer(ephemeral=True)
 
-    if not file.filename.endswith((".lua", ".luau", ".txt")):
+    if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
         await interaction.followup.send(
             embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
             ephemeral=True
@@ -410,7 +412,11 @@ async def uploadscript(
         return
 
     content_bytes = await file.read()
-    content = content_bytes.decode("utf-8", errors="replace")
+
+    try:
+        content = content_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        content = content_bytes.decode("utf-8", errors="replace")
 
     status, data = await api_post(
         f"{OWNER_API}/uploadscript",
@@ -456,7 +462,7 @@ async def apitest(interaction: discord.Interaction):
     await interaction.followup.send(
         embed=discord.Embed(
             title="API Test",
-            description=f"Status: `{status}`\n```{data}```",
+            description=f"Status: `{status}`\n```{str(data)[:3500]}```",
             color=discord.Color.blurple()
         ),
         ephemeral=True
