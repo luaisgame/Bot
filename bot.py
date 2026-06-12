@@ -13,6 +13,13 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_KEY = os.getenv("OWNER_KEY")
 
+print("=" * 50)
+print("OWNER KEY DEBUG")
+print("=" * 50)
+print("Raw OWNER_KEY:", repr(OWNER_KEY))
+print("Length:", len(OWNER_KEY) if OWNER_KEY else 0)
+print("=" * 50)
+
 OWNER_DISCORD_IDS = {
     int(x.strip())
     for x in os.getenv("OWNER_DISCORD_IDS", "").split(",")
