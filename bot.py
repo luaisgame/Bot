@@ -1,24 +1,15 @@
 import os
-import sqlite3
 import aiohttp
 import discord
 
-from pathlib import Path
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-OWNER_KEY = os.getenv("OWNER_KEY")
-
-print("=" * 50)
-print("OWNER KEY DEBUG")
-print("=" * 50)
-print("Raw OWNER_KEY:", repr(OWNER_KEY))
-print("Length:", len(OWNER_KEY) if OWNER_KEY else 0)
-print("=" * 50)
+TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
+OWNER_KEY = os.getenv("OWNER_KEY", "").strip()
 
 OWNER_DISCORD_IDS = {
     int(x.strip())
@@ -26,13 +17,10 @@ OWNER_DISCORD_IDS = {
     if x.strip().isdigit()
 }
 
-STAFF_ROLE_ID = 1458539044014391306
+CREATE_ROLE_ID = 1458539044014391306
 MAX_CREATE_AMOUNT = 25
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "linked_keys.db"))
-
-API_BASE = "https://key-system-api.luaisgame.workers.dev/api"
+API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
 
 if not TOKEN:
@@ -45,108 +33,12 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-def init_db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    con = sqlite3.connect(str(DB_PATH))
-    cur = con.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS linked_keys_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            key TEXT UNIQUE NOT NULL,
-            class_type TEXT DEFAULT 'Unknown',
-            claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cur.execute("""
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='linked_keys'
-    """)
-
-    old_exists = cur.fetchone()
-
-    if old_exists:
-        cur.execute("PRAGMA table_info(linked_keys)")
-        columns = [col[1] for col in cur.fetchall()]
-
-        if "id" not in columns:
-            cur.execute("""
-                INSERT OR IGNORE INTO linked_keys_new
-                (user_id, key, class_type, claimed_at)
-                SELECT
-                    user_id,
-                    key,
-                    'Unknown',
-                    CURRENT_TIMESTAMP
-                FROM linked_keys
-            """)
-
-            cur.execute("DROP TABLE linked_keys")
-            cur.execute("ALTER TABLE linked_keys_new RENAME TO linked_keys")
-        else:
-            cur.execute("DROP TABLE linked_keys_new")
-    else:
-        cur.execute("ALTER TABLE linked_keys_new RENAME TO linked_keys")
-
-    con.commit()
-    con.close()
-
-
-def get_user_keys(user_id: int):
-    con = sqlite3.connect(str(DB_PATH))
-    cur = con.cursor()
-
-    cur.execute(
-        """
-        SELECT key, class_type, claimed_at
-        FROM linked_keys
-        WHERE user_id = ?
-        ORDER BY claimed_at DESC
-        """,
-        (str(user_id),)
-    )
-
-    rows = cur.fetchall()
-    con.close()
-    return rows
-
-
-def is_key_claimed(key: str):
-    con = sqlite3.connect(str(DB_PATH))
-    cur = con.cursor()
-
-    cur.execute("SELECT user_id FROM linked_keys WHERE key = ?", (key,))
-    row = cur.fetchone()
-
-    con.close()
-    return row is not None
-
-
-def link_key(user_id: int, key: str, class_type: str):
-    con = sqlite3.connect(str(DB_PATH))
-    cur = con.cursor()
-
-    cur.execute(
-        """
-        INSERT INTO linked_keys (user_id, key, class_type)
-        VALUES (?, ?, ?)
-        """,
-        (str(user_id), key, class_type)
-    )
-
-    con.commit()
-    con.close()
-
-
-def is_staff(member: discord.Member):
-    return any(role.id == STAFF_ROLE_ID for role in member.roles)
-
-
 def is_owner(user: discord.User):
     return user.id in OWNER_DISCORD_IDS
+
+
+def has_create_role(member: discord.Member):
+    return any(role.id == CREATE_ROLE_ID for role in member.roles)
 
 
 def success_embed(title, description):
@@ -168,29 +60,37 @@ def error_embed(title, description):
 async def api_post(url: str, payload: dict):
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload) as response:
+            text = await response.text()
+
             try:
                 data = await response.json()
             except Exception:
                 data = {
                     "valid": False,
-                    "message": await response.text()
+                    "message": text
                 }
+
+            print("API URL:", url)
+            print("API STATUS:", response.status)
+            print("API RESPONSE:", data)
 
             return response.status, data
 
 
 @bot.event
 async def on_ready():
-    init_db()
-
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} commands.")
     except Exception as e:
         print(f"Sync error: {e}")
 
-    print(f"Database path: {DB_PATH}")
-    print(f"Logged in as {bot.user}")
+    print("=" * 50)
+    print("BOT STARTED")
+    print("User:", bot.user)
+    print("API:", API_BASE)
+    print("OWNER_KEY:", repr(OWNER_KEY))
+    print("=" * 50)
 
 
 @app_commands.choices(
@@ -214,7 +114,7 @@ async def createkey(
         )
         return
 
-    if not is_staff(interaction.user):
+    if not has_create_role(interaction.user):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You cannot create keys."),
             ephemeral=True
@@ -230,7 +130,7 @@ async def createkey(
 
     await interaction.response.defer(ephemeral=False)
 
-    created_keys = []
+    created = []
     failed = 0
     errors = []
 
@@ -244,29 +144,27 @@ async def createkey(
         )
 
         if status == 200 and data.get("valid") and data.get("key"):
-            created_keys.append(data["key"])
+            created.append(data["key"])
         else:
             failed += 1
             errors.append(str(data))
 
-    if not created_keys:
+    if not created:
         await interaction.followup.send(
             embed=error_embed(
-                "Key Creation Failed",
+                "Failed",
                 f"No keys were created.\n```{chr(10).join(errors)[:3000]}```"
             )
         )
         return
 
-    key_text = "\n".join(created_keys)
-
     embed = success_embed(
-        f"✅ Created {len(created_keys)} Key{'s' if len(created_keys) != 1 else ''}",
-        f"```{key_text}```"
+        f"✅ Created {len(created)} Key{'s' if len(created) != 1 else ''}",
+        f"```{chr(10).join(created)}```"
     )
 
     embed.add_field(name="Type", value=class_type.value, inline=True)
-    embed.add_field(name="Quantity", value=str(len(created_keys)), inline=True)
+    embed.add_field(name="Quantity", value=str(len(created)), inline=True)
     embed.add_field(name="Created By", value=interaction.user.mention, inline=True)
 
     if failed:
@@ -293,12 +191,12 @@ async def listkeys(interaction: discord.Interaction):
 
     if status != 200 or not data.get("valid"):
         await interaction.followup.send(
-            embed=error_embed("List Failed", data.get("message", "Could not list keys.")),
+            embed=error_embed("List Failed", str(data)),
             ephemeral=True
         )
         return
 
-    keys = [x for x in data.get("keys", []) if not x.get("owner")]
+    keys = [k for k in data.get("keys", []) if not k.get("owner")]
 
     if not keys:
         await interaction.followup.send(
@@ -309,184 +207,260 @@ async def listkeys(interaction: discord.Interaction):
 
     lines = []
 
-    for entry in keys:
-        key = entry.get("key", "Unknown")
-        class_type = entry.get("classType", "Unknown")
-        hwid = entry.get("hwid") or "None"
-
-        lines.append(f"`{key}`\nType: **{class_type}** | HWID: `{hwid}`")
+    for k in keys:
+        lines.append(
+            f"`{k['key']}`\nType: **{k['classType']}** | HWID: `{k.get('hwid') or 'None'}`"
+        )
 
     text = "\n\n".join(lines)
     chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)]
 
     for i, chunk in enumerate(chunks, start=1):
-        embed = discord.Embed(
-            title=f"📋 Key List {i}/{len(chunks)}",
-            description=chunk,
-            color=discord.Color.blurple()
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title=f"📋 Keys {i}/{len(chunks)}",
+                description=chunk,
+                color=discord.Color.blurple()
+            ),
+            ephemeral=True
         )
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
     await interaction.response.defer(ephemeral=True)
 
-    key = key.strip()
+    status, data = await api_post(
+        f"{API_BASE}/redeem",
+        {
+            "key": key.strip(),
+            "userId": str(interaction.user.id)
+        }
+    )
 
-    if is_key_claimed(key):
+    if status != 200 or not data.get("valid"):
         await interaction.followup.send(
-            embed=error_embed("Already Redeemed", "That key is already linked to a Discord user."),
+            embed=error_embed("Redeem Failed", data.get("message", "Invalid key.")),
             ephemeral=True
         )
         return
+
+    await interaction.followup.send(
+        embed=success_embed(
+            "✅ Key Redeemed",
+            f"Key: `{data['key']}`\nType: **{data['classType']}**"
+        ),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="mykeys", description="List your redeemed keys")
+async def mykeys(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    status, data = await api_post(
+        f"{API_BASE}/mykeys",
+        {"userId": str(interaction.user.id)}
+    )
+
+    keys = data.get("keys", [])
+
+    if not keys:
+        await interaction.followup.send(
+            embed=error_embed("No Keys", "You have not redeemed any keys."),
+            ephemeral=True
+        )
+        return
+
+    text = "\n\n".join(
+        f"`{k['key']}`\nType: **{k['classType']}**"
+        for k in keys
+    )
+
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="🔑 Your Keys",
+            description=text[:4000],
+            color=discord.Color.blurple()
+        ),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
+async def resethwid(interaction: discord.Interaction, key: str):
+    await interaction.response.defer(ephemeral=True)
+
+    status, data = await api_post(
+        f"{API_BASE}/reset",
+        {
+            "ownerKey": OWNER_KEY,
+            "key": key.strip(),
+            "userId": str(interaction.user.id)
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Reset Failed", data.get("message", "Could not reset HWID.")),
+            ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        embed=success_embed("✅ HWID Reset", f"Reset HWID for:\n`{key}`"),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="keyinfo", description="Show info about a key")
+async def keyinfo(interaction: discord.Interaction, key: str):
+    if not is_owner(interaction.user):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "Only the bot owner can use this."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    status, data = await api_post(
+        f"{OWNER_API}/keyinfo",
+        {
+            "ownerKey": OWNER_KEY,
+            "key": key.strip()
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Not Found", data.get("message", "Key not found.")),
+            ephemeral=True
+        )
+        return
+
+    k = data["keyData"]
+    redeemed = data.get("redeemed")
+
+    embed = discord.Embed(title="🔎 Key Info", color=discord.Color.blurple())
+    embed.add_field(name="Key", value=f"`{k['key']}`", inline=False)
+    embed.add_field(name="Type", value=k["classType"], inline=True)
+    embed.add_field(name="HWID", value=f"`{k.get('hwid') or 'None'}`", inline=True)
+
+    if redeemed:
+        embed.add_field(name="Redeemed By", value=f"<@{redeemed['userId']}>", inline=False)
+    else:
+        embed.add_field(name="Redeemed", value="No", inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="deletekey", description="Delete a key")
+async def deletekey(interaction: discord.Interaction, key: str):
+    if not is_owner(interaction.user):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "Only the bot owner can delete keys."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    status, data = await api_post(
+        f"{OWNER_API}/delete",
+        {
+            "ownerKey": OWNER_KEY,
+            "key": key.strip()
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Delete Failed", data.get("message", "Could not delete key.")),
+            ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        embed=success_embed("✅ Key Deleted", f"Deleted:\n`{key}`"),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="uploadscript", description="Upload or update a Luau script")
+async def uploadscript(
+    interaction: discord.Interaction,
+    name: str,
+    file: discord.Attachment
+):
+    if not is_owner(interaction.user):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "Only the bot owner can upload scripts."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    if not file.filename.endswith((".lua", ".luau", ".txt")):
+        await interaction.followup.send(
+            embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
+            ephemeral=True
+        )
+        return
+
+    content_bytes = await file.read()
+    content = content_bytes.decode("utf-8", errors="replace")
+
+    status, data = await api_post(
+        f"{OWNER_API}/uploadscript",
+        {
+            "ownerKey": OWNER_KEY,
+            "name": name.strip().lower(),
+            "content": content
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Upload Failed", data.get("message", "Could not upload script.")),
+            ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        embed=success_embed(
+            "✅ Script Uploaded",
+            f"Name: `{name.strip().lower()}`\nEndpoint: `{API_BASE}/getscript`"
+        ),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="apitest", description="Test the key API")
+async def apitest(interaction: discord.Interaction):
+    if not is_owner(interaction.user):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "Only the bot owner can test the API."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/list",
         {"ownerKey": OWNER_KEY}
     )
 
-    if status != 200 or not data.get("valid"):
-        await interaction.followup.send(
-            embed=error_embed("Redeem Failed", "Could not verify this key."),
-            ephemeral=True
-        )
-        return
-
-    found = None
-
-    for entry in data.get("keys", []):
-        if entry.get("key") == key and not entry.get("owner"):
-            found = entry
-            break
-
-    if not found:
-        await interaction.followup.send(
-            embed=error_embed("Invalid Key", "That key does not exist."),
-            ephemeral=True
-        )
-        return
-
-    class_type = found.get("classType", "Unknown")
-
-    try:
-        link_key(interaction.user.id, key, class_type)
-    except sqlite3.IntegrityError:
-        await interaction.followup.send(
-            embed=error_embed("Already Redeemed", "That key is already claimed."),
-            ephemeral=True
-        )
-        return
-
-    embed = success_embed(
-        "✅ Key Redeemed",
-        "Your Discord account has claimed this key."
-    )
-
-    embed.add_field(name="Key", value=f"`{key}`", inline=False)
-    embed.add_field(name="Type", value=class_type, inline=True)
-
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-@bot.tree.command(name="mykeys", description="List all keys you redeemed")
-async def mykeys(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-
-    keys = get_user_keys(interaction.user.id)
-
-    if not keys:
-        await interaction.followup.send(
-            embed=error_embed("No Redeemed Keys", "You have not redeemed any keys."),
-            ephemeral=True
-        )
-        return
-
-    lines = []
-
-    for key, class_type, claimed_at in keys:
-        lines.append(
-            f"`{key}`\nType: **{class_type}**\nClaimed: `{claimed_at}`"
-        )
-
-    text = "\n\n".join(lines)
-    chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)]
-
-    for i, chunk in enumerate(chunks, start=1):
-        embed = discord.Embed(
-            title=f"🔑 Your Redeemed Keys {i}/{len(chunks)}",
-            description=chunk,
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="API Test",
+            description=f"Status: `{status}`\n```{data}```",
             color=discord.Color.blurple()
-        )
-
-        embed.set_footer(text=f"Total keys: {len(keys)}")
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-@bot.tree.command(name="resethwid", description="Reset HWID on one of your redeemed keys")
-async def resethwid(interaction: discord.Interaction, key: str = None):
-    await interaction.response.defer(ephemeral=True)
-
-    keys = get_user_keys(interaction.user.id)
-
-    if not keys:
-        await interaction.followup.send(
-            embed=error_embed("No Linked Key", "Use `/redeem` first."),
-            ephemeral=True
-        )
-        return
-
-    if key is None:
-        if len(keys) == 1:
-            key = keys[0][0]
-        else:
-            await interaction.followup.send(
-                embed=error_embed(
-                    "Multiple Keys Found",
-                    "Use `/mykeys`, then run `/resethwid key:YOUR_KEY`."
-                ),
-                ephemeral=True
-            )
-            return
-
-    key = key.strip()
-    owned_keys = [row[0] for row in keys]
-
-    if key not in owned_keys:
-        await interaction.followup.send(
-            embed=error_embed("Not Your Key", "You can only reset keys you redeemed."),
-            ephemeral=True
-        )
-        return
-
-    status, data = await api_post(
-        f"{API_BASE}/reset",
-        {
-            "key": key,
-            "hwid": None
-        }
+        ),
+        ephemeral=True
     )
-
-    if status != 200 or not data.get("valid"):
-        await interaction.followup.send(
-            embed=error_embed(
-                "HWID Reset Failed",
-                data.get("message", "You may be on cooldown.")
-            ),
-            ephemeral=True
-        )
-        return
-
-    embed = success_embed(
-        "✅ HWID Reset",
-        "Your HWID has been reset successfully."
-    )
-
-    embed.add_field(name="Key", value=f"`{key}`", inline=False)
-
-    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 bot.run(TOKEN)
