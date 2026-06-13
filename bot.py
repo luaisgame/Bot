@@ -18,7 +18,7 @@ OWNER_DISCORD_IDS = {
 }
 
 CREATE_ROLE_ID = 1458539044014391306
-MAX_CREATE_AMOUNT = 25
+MAX_CREATE_AMOUNT = 1000
 
 API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
@@ -93,6 +93,14 @@ async def on_ready():
         app_commands.Choice(name="Developer", value="Developer"),
     ]
 )
+@app_commands.choices(
+    class_type=[
+        app_commands.Choice(name="Premium", value="Premium"),
+        app_commands.Choice(name="Staff", value="Staff"),
+        app_commands.Choice(name="Tester", value="Tester"),
+        app_commands.Choice(name="Developer", value="Developer"),
+    ]
+)
 @bot.tree.command(name="createkey", description="Create one or more keys")
 async def createkey(
     interaction: discord.Interaction,
@@ -101,7 +109,7 @@ async def createkey(
 ):
     if not isinstance(interaction.user, discord.Member):
         await interaction.response.send_message(
-            embed=error_embed("Error", "Use this command inside a server."),
+            embed=error_embed("Error", "Use this inside a server."),
             ephemeral=True
         )
         return
@@ -122,31 +130,22 @@ async def createkey(
 
     await interaction.response.defer(ephemeral=False)
 
-    created = []
-    errors = []
+    status, data = await api_post(
+        f"{OWNER_API}/create",
+        {
+            "ownerKey": OWNER_KEY,
+            "classType": class_type.value,
+            "quantity": quantity
+        }
+    )
 
-    for _ in range(quantity):
-        status, data = await api_post(
-            f"{OWNER_API}/create",
-            {
-                "ownerKey": OWNER_KEY,
-                "classType": class_type.value
-            }
-        )
-
-        if status == 200 and data.get("valid") and data.get("key"):
-            created.append(data["key"])
-        else:
-            errors.append(str(data))
-
-    if not created:
+    if status != 200 or not data.get("valid"):
         await interaction.followup.send(
-            embed=error_embed(
-                "Key Creation Failed",
-                f"No keys were created.\n```{chr(10).join(errors)[:3000]}```"
-            )
+            embed=error_embed("Failed", data.get("message", "No keys were created."))
         )
         return
+
+    created = data.get("keys", [])
 
     embed = success_embed(
         f"✅ Created {len(created)} Key{'s' if len(created) != 1 else ''}",
@@ -156,9 +155,6 @@ async def createkey(
     embed.add_field(name="Type", value=class_type.value, inline=True)
     embed.add_field(name="Quantity", value=str(len(created)), inline=True)
     embed.add_field(name="Created By", value=interaction.user.mention, inline=True)
-
-    if errors:
-        embed.add_field(name="Failed", value=str(len(errors)), inline=True)
 
     await interaction.followup.send(embed=embed)
 
