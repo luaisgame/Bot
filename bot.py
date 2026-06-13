@@ -139,6 +139,8 @@ async def createkey(
         }
     )
 
+    print("CREATE RESPONSE:", data)
+
     if status != 200 or not data.get("valid"):
         await interaction.followup.send(
             embed=error_embed("Failed", data.get("message", "No keys were created."))
