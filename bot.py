@@ -477,7 +477,7 @@ async def uploadfile(
     await interaction.followup.send(
         embed=success_embed(
             "✅ File Uploaded",
-            f"Name: `{data.get('name')}`\nDownload: `{data.get('url')}`"
+            f"```{data.get('url')}```"
         ),
         ephemeral=True
     )
