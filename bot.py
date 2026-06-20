@@ -12,8 +12,10 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 OWNER_KEY = os.getenv("OWNER_KEY", "").strip()
 
+STAFF_ROLE_ID = 1458539044014391306
 DEV_ROLE_ID = 1458539079577899088
-MAX_CREATE_AMOUNT = 25
+
+MAX_CREATE_AMOUNT = 1000
 
 API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
@@ -30,9 +32,29 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-def has_dev_role(member: discord.Member):
-    return any(role.id == DEV_ROLE_ID for role in member.roles)
+def has_role(member: discord.Member, role_id: int):
+    return any(role.id == role_id for role in member.roles)
 
+def has_dev_role(member: discord.Member):
+    return has_role(member, DEV_ROLE_ID)
+
+def has_staff_role(member: discord.Member):
+    return has_role(member, STAFF_ROLE_ID)
+
+def require_dev(interaction: discord.Interaction):
+    return (
+        isinstance(interaction.user, discord.Member)
+        and has_dev_role(interaction.user)
+    )
+
+def require_staff_or_dev(interaction: discord.Interaction):
+    return (
+        isinstance(interaction.user, discord.Member)
+        and (
+            has_dev_role(interaction.user)
+            or has_staff_role(interaction.user)
+        )
+    )
 
 def success_embed(title, description):
     return discord.Embed(title=title, description=description, color=discord.Color.green())
@@ -58,9 +80,6 @@ async def api_post(url: str, payload: dict):
 
             return response.status, data
 
-
-def require_dev(interaction: discord.Interaction):
-    return isinstance(interaction.user, discord.Member) and has_dev_role(interaction.user)
 
 
 @bot.event
@@ -94,13 +113,24 @@ async def createkey(
     class_type: app_commands.Choice[str],
     quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
 ):
-    if not require_dev(interaction):
+    if not require_staff_or_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
-
+    if (
+        class_type.value == "Developer"
+        and not has_dev_role(interaction.user)
+    ):
+        await interaction.response.send_message(
+            embed=error_embed(
+                "No Permission",
+                "Only developers can create Developer keys."
+            ),
+            ephemeral=True
+        )
+        return
     await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
@@ -414,7 +444,7 @@ async def uploadfile(
     name: str,
     file: discord.Attachment
 ):
-    if not require_dev(interaction):
+    if not require_staff_or_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
@@ -453,11 +483,14 @@ async def uploadfile(
     )
 
 
-@bot.tree.command(name="apitest", description="Test the key API")
+@bot.tree.command(name="apitest", description="Test the validation API")
 async def apitest(interaction: discord.Interaction):
     if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "You need developer permissions."),
+            embed=error_embed(
+                "No Permission",
+                "You need developer permissions."
+            ),
             ephemeral=True
         )
         return
@@ -465,18 +498,24 @@ async def apitest(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
-        f"{OWNER_API}/list",
-        {"ownerKey": OWNER_KEY}
+        f"{API_BASE}/validate",
+        {
+            "key": "THIS_KEY_SHOULD_NOT_EXIST",
+            "hwid": "API_TEST"
+        }
     )
 
     await interaction.followup.send(
         embed=discord.Embed(
-            title="API Test",
-            description=f"Status: `{status}`\n```{str(data)[:3500]}```",
+            title="🧪 API Validation Test",
+            description=(
+                f"Endpoint: `{API_BASE}/validate`\n"
+                f"Status: `{status}`\n\n"
+                f"```json\n{str(data)[:3000]}\n```"
+            ),
             color=discord.Color.blurple()
         ),
         ephemeral=True
     )
-
 
 bot.run(TOKEN)
