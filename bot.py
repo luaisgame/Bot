@@ -1,4 +1,5 @@
 import os
+import base64
 import aiohttp
 import discord
 
@@ -11,14 +12,8 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 OWNER_KEY = os.getenv("OWNER_KEY", "").strip()
 
-OWNER_DISCORD_IDS = {
-    int(x.strip())
-    for x in os.getenv("OWNER_DISCORD_IDS", "").split(",")
-    if x.strip().isdigit()
-}
-
-CREATE_ROLE_ID = 1458539044014391306
-MAX_CREATE_AMOUNT = 1000
+DEV_ROLE_ID = 1458539079577899088
+MAX_CREATE_AMOUNT = 25
 
 API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
@@ -35,12 +30,8 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-def is_owner(user: discord.User):
-    return user.id in OWNER_DISCORD_IDS
-
-
-def has_create_role(member: discord.Member):
-    return any(role.id == CREATE_ROLE_ID for role in member.roles)
+def has_dev_role(member: discord.Member):
+    return any(role.id == DEV_ROLE_ID for role in member.roles)
 
 
 def success_embed(title, description):
@@ -68,6 +59,10 @@ async def api_post(url: str, payload: dict):
             return response.status, data
 
 
+def require_dev(interaction: discord.Interaction):
+    return isinstance(interaction.user, discord.Member) and has_dev_role(interaction.user)
+
+
 @bot.event
 async def on_ready():
     try:
@@ -80,19 +75,11 @@ async def on_ready():
     print("BOT STARTED")
     print("User:", bot.user)
     print("API:", API_BASE)
-    print("OWNER IDS:", OWNER_DISCORD_IDS)
-    print("OWNER KEY:", repr(OWNER_KEY))
+    print("DEV_ROLE_ID:", DEV_ROLE_ID)
+    print("OWNER_KEY:", repr(OWNER_KEY))
     print("=" * 50)
 
 
-@app_commands.choices(
-    class_type=[
-        app_commands.Choice(name="Premium", value="Premium"),
-        app_commands.Choice(name="Staff", value="Staff"),
-        app_commands.Choice(name="Tester", value="Tester"),
-        app_commands.Choice(name="Developer", value="Developer"),
-    ]
-)
 @app_commands.choices(
     class_type=[
         app_commands.Choice(name="Premium", value="Premium"),
@@ -107,23 +94,9 @@ async def createkey(
     class_type: app_commands.Choice[str],
     quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
 ):
-    if not isinstance(interaction.user, discord.Member):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("Error", "Use this inside a server."),
-            ephemeral=True
-        )
-        return
-
-    if not has_create_role(interaction.user):
-        await interaction.response.send_message(
-            embed=error_embed("No Permission", "You cannot create keys."),
-            ephemeral=True
-        )
-        return
-
-    if class_type.value == "Developer" and not is_owner(interaction.user):
-        await interaction.response.send_message(
-            embed=error_embed("No Permission", "You cannot create Developer keys."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
@@ -139,15 +112,21 @@ async def createkey(
         }
     )
 
-    print("CREATE RESPONSE:", data)
-
     if status != 200 or not data.get("valid"):
         await interaction.followup.send(
             embed=error_embed("Failed", data.get("message", "No keys were created."))
         )
         return
 
-    created = data.get("keys", [])
+    created = data.get("keys") or []
+    if not created and data.get("key"):
+        created = [data["key"]]
+
+    if not created:
+        await interaction.followup.send(
+            embed=error_embed("Failed", "API returned no keys.")
+        )
+        return
 
     embed = success_embed(
         f"✅ Created {len(created)} Key{'s' if len(created) != 1 else ''}",
@@ -163,9 +142,9 @@ async def createkey(
 
 @bot.tree.command(name="listkeys", description="List all keys")
 async def listkeys(interaction: discord.Interaction):
-    if not is_owner(interaction.user):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "Only the bot owner can list keys."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
@@ -193,16 +172,11 @@ async def listkeys(interaction: discord.Interaction):
         )
         return
 
-    lines = []
+    text = "\n\n".join(
+        f"`{k.get('key', 'Unknown')}`\nType: **{k.get('classType', 'Unknown')}** | HWID: `{k.get('hwid') or 'None'}`"
+        for k in keys
+    )
 
-    for k in keys:
-        lines.append(
-            f"`{k.get('key', 'Unknown')}`\n"
-            f"Type: **{k.get('classType', 'Unknown')}** | "
-            f"HWID: `{k.get('hwid') or 'None'}`"
-        )
-
-    text = "\n\n".join(lines)
     chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)]
 
     for i, chunk in enumerate(chunks, start=1):
@@ -238,7 +212,7 @@ async def redeem(interaction: discord.Interaction, key: str):
     await interaction.followup.send(
         embed=success_embed(
             "✅ Key Redeemed",
-            f"Key: `{data.get('key')}`\nType: **{data.get('classType')}**"
+            f"Key: `{data.get('key')}`\nType: **{data.get('classType', 'Unknown')}**"
         ),
         ephemeral=True
     )
@@ -274,17 +248,14 @@ async def mykeys(interaction: discord.Interaction):
         for k in keys
     )
 
-    chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)]
-
-    for i, chunk in enumerate(chunks, start=1):
-        await interaction.followup.send(
-            embed=discord.Embed(
-                title=f"🔑 Your Keys {i}/{len(chunks)}",
-                description=chunk,
-                color=discord.Color.blurple()
-            ),
-            ephemeral=True
-        )
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="🔑 Your Keys",
+            description=text[:4000],
+            color=discord.Color.blurple()
+        ),
+        ephemeral=True
+    )
 
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
@@ -315,9 +286,9 @@ async def resethwid(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="keyinfo", description="Show info about a key")
 async def keyinfo(interaction: discord.Interaction, key: str):
-    if not is_owner(interaction.user):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "Only the bot owner can use this."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
@@ -357,9 +328,9 @@ async def keyinfo(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="deletekey", description="Delete a key")
 async def deletekey(interaction: discord.Interaction, key: str):
-    if not is_owner(interaction.user):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "Only the bot owner can delete keys."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
@@ -393,9 +364,9 @@ async def uploadscript(
     name: str,
     file: discord.Attachment
 ):
-    if not is_owner(interaction.user):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "Only the bot owner can upload scripts."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
@@ -410,11 +381,7 @@ async def uploadscript(
         return
 
     content_bytes = await file.read()
-
-    try:
-        content = content_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        content = content_bytes.decode("utf-8", errors="replace")
+    content = content_bytes.decode("utf-8", errors="replace")
 
     status, data = await api_post(
         f"{OWNER_API}/uploadscript",
@@ -441,11 +408,56 @@ async def uploadscript(
     )
 
 
+@bot.tree.command(name="uploadfile", description="Upload a downloadable file")
+async def uploadfile(
+    interaction: discord.Interaction,
+    name: str,
+    file: discord.Attachment
+):
+    if not require_dev(interaction):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "You need developer permissions."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    content = await file.read()
+    content_base64 = base64.b64encode(content).decode("utf-8")
+
+    status, data = await api_post(
+        f"{OWNER_API}/uploadfile",
+        {
+            "ownerKey": OWNER_KEY,
+            "name": name.strip().lower(),
+            "filename": file.filename,
+            "mimeType": file.content_type or "application/octet-stream",
+            "contentBase64": content_base64
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Upload Failed", data.get("message", "Could not upload file.")),
+            ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        embed=success_embed(
+            "✅ File Uploaded",
+            f"Name: `{data.get('name')}`\nDownload: `{data.get('url')}`"
+        ),
+        ephemeral=True
+    )
+
+
 @bot.tree.command(name="apitest", description="Test the key API")
 async def apitest(interaction: discord.Interaction):
-    if not is_owner(interaction.user):
+    if not require_dev(interaction):
         await interaction.response.send_message(
-            embed=error_embed("No Permission", "Only the bot owner can test the API."),
+            embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
