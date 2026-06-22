@@ -11,6 +11,7 @@ load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
 OWNER_KEY = os.getenv("OWNER_KEY", "").strip()
+MOONVEIL_API_TOKEN = os.getenv("MOONVEIL_API_TOKEN", "").strip()
 
 STAFF_ROLE_ID = 1458539044014391306
 DEV_ROLE_ID = 1458539079577899088
@@ -419,6 +420,80 @@ async def uploadscript(
             "ownerKey": OWNER_KEY,
             "name": name.strip().lower(),
             "content": content
+        }
+    )
+
+    if status != 200 or not data.get("valid"):
+        await interaction.followup.send(
+            embed=error_embed("Upload Failed", data.get("message", "Could not upload script.")),
+            ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        embed=success_embed(
+            "✅ Script Uploaded",
+            f"Name: `{name.strip().lower()}`\nEndpoint: `{API_BASE}/getscript`"
+        ),
+        ephemeral=True
+    )
+@bot.tree.command(name="uploadscriptandobfuscate", description="Upload or update a Luau script")
+async def uploadscriptandobfuscate(
+    interaction: discord.Interaction,
+    name: str,
+    file: discord.Attachment
+):
+    if not require_dev(interaction):
+        await interaction.response.send_message(
+            embed=error_embed("No Permission", "You need developer permissions."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
+        await interaction.followup.send(
+            embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
+            ephemeral=True
+        )
+        return
+
+    content_bytes = await file.read()
+    content = content_bytes.decode("utf-8", errors="replace")
+
+    async def post(url, payload, headers):
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                headers=headers
+            ) as response:
+                return await response.text()
+
+
+    response = await post(
+        "https://moonveil.cc/api/v2/obf",
+        {   
+            "options": {
+                "cffDecompose": True,
+                "cffMangleGlobals": True,
+                "cffMangleNext": True,
+                "cffMangleStrings": True
+            },
+            "script": content
+        },
+        {
+            "Authorization": f"Bearer { MOONVEIL_API_TOKEN }"
+        }
+    )
+
+    status, data = await api_post(
+        f"{OWNER_API}/uploadscript",
+        {
+            "ownerKey": OWNER_KEY,
+            "name": name.strip().lower(),
+            "content": response
         }
     )
 
