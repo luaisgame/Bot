@@ -106,6 +106,7 @@ async def on_ready():
         app_commands.Choice(name="Staff", value="Staff"),
         app_commands.Choice(name="Tester", value="Tester"),
         app_commands.Choice(name="Developer", value="Developer"),
+        app_commands.Choice(name="Custom", value="Custom"),
     ]
 )
 @bot.tree.command(name="createkey", description="Create one or more keys")
@@ -113,6 +114,7 @@ async def createkey(
     interaction: discord.Interaction,
     class_type: app_commands.Choice[str],
     quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
+    customkey: str | None = None,
 ):
     if not require_staff_or_dev(interaction):
         await interaction.response.send_message(
@@ -139,7 +141,8 @@ async def createkey(
         {
             "ownerKey": OWNER_KEY,
             "classType": class_type.value,
-            "quantity": quantity
+            "quantity": quantity,
+            "customKey": customkey
         }
     )
 
