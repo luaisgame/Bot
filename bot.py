@@ -113,7 +113,7 @@ async def on_ready():
 async def createkey(
     interaction: discord.Interaction,
     class_type: app_commands.Choice[str],
-    quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1
+    quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1,
     customkey: str | None = None,
 ):
     if not require_staff_or_dev(interaction):
