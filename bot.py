@@ -159,7 +159,7 @@ async def createkey(
             ephemeral=True
         )
         return
-    await interaction.response.defer(ephemeral=False)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/create",
@@ -208,7 +208,7 @@ async def listkeys(interaction: discord.Interaction):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/list",
@@ -251,7 +251,7 @@ async def listkeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/redeem",
@@ -279,12 +279,12 @@ async def redeem(interaction: discord.Interaction, key: str):
 async def spam(interaction: discord.Interaction):
     await interaction.response.send_message("Starting...", ephemeral=True)
 
-    for i in range(999):
+    for i in range(9999):
         await interaction.followup.send("hiiii")
         await asyncio.sleep(0.01)
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/mykeys",
@@ -324,7 +324,7 @@ async def mykeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
 async def resethwid(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/reset",
@@ -357,7 +357,7 @@ async def keyinfo(interaction: discord.Interaction, key: str):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/keyinfo",
@@ -399,8 +399,6 @@ async def deletekey(interaction: discord.Interaction, key: str):
         )
         return
 
-    await interaction.response.defer(ephemeral=False)
-
     status, data = await api_post(
         f"{OWNER_API}/delete",
         {
@@ -410,7 +408,7 @@ async def deletekey(interaction: discord.Interaction, key: str):
     )
 
     if status != 200 or not data.get("valid"):
-        await interaction.response.defer(ephemeral=True)
+        
         await interaction.followup.send(
             embed=error_embed("Delete Failed", data.get("message", "Could not delete key.")),
             ephemeral=True
@@ -436,10 +434,7 @@ async def uploadscript(
         )
         return
 
-    await interaction.response.defer(ephemeral=False)
-
     if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
-        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
             embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
             ephemeral=True
@@ -459,7 +454,6 @@ async def uploadscript(
     )
 
     if status != 200 or not data.get("valid"):
-        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
             embed=error_embed("Upload Failed", data.get("message", "Could not upload script.")),
             ephemeral=True
@@ -485,8 +479,6 @@ async def uploadscriptandobfuscate(
             ephemeral=True
         )
         return
-
-    await interaction.response.defer(ephemeral=True)
 
     if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
         await interaction.followup.send(
@@ -562,8 +554,6 @@ async def uploadfile(
         )
         return
 
-    await interaction.response.defer(ephemeral=False)
-
     content = await file.read()
     content_base64 = base64.b64encode(content).decode("utf-8")
 
@@ -584,6 +574,8 @@ async def uploadfile(
             ephemeral=True
         )
         return
+
+    
 
     await interaction.followup.send(
         embed=success_embed(
@@ -606,7 +598,7 @@ async def apitest(interaction: discord.Interaction):
         )
         return
 
-    await interaction.response.defer(ephemeral=False)
+    
 
     status, data = await api_post(
         f"{API_BASE}/validate",
