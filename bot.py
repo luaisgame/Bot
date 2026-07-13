@@ -1,7 +1,10 @@
+from builtins import print
 import os
 import base64
+from pickle import TRUE
 import aiohttp
 import discord
+import asyncio
 
 from dotenv import load_dotenv
 from discord.ext import commands
@@ -9,14 +12,14 @@ from discord import app_commands
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
-OWNER_KEY = os.getenv("OWNER_KEY", "").strip()
-MOONVEIL_API_TOKEN = os.getenv("MOONVEIL_API_TOKEN", "").strip()
+TOKEN = os.getenv("Bot_Token")
+OWNER_KEY = os.getenv("MoonVeil_Api")
+MOONVEIL_API_TOKEN = os.getenv("Owner_Key")
 
 STAFF_ROLE_ID = 1458539044014391306
 DEV_ROLE_ID = 1458539079577899088
 
-MAX_CREATE_AMOUNT = 1000
+GUILD_ID = 1458535933090726205
 
 API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
@@ -29,32 +32,53 @@ if not OWNER_KEY:
 
 intents = discord.Intents.default()
 intents.guilds = True
+intents.dm_messages = True
+intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents,
+    allowed_contexts=app_commands.AppCommandContext(
+        guild=True,
+        dm_channel=True,
+        private_channel=True,
+    ),
+    allowed_installs=app_commands.AppInstallationType(
+        guild=True,
+        user=True,
+    ),
+)
 
+async def has_role(bot: discord.Client, user_id: int, role_id: int) -> bool:
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        return False
 
-def has_role(member: discord.Member, role_id: int):
+    member = guild.get_member(user_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            return False
+        except discord.Forbidden:
+            return False
+
     return any(role.id == role_id for role in member.roles)
 
-def has_dev_role(member: discord.Member):
-    return has_role(member, DEV_ROLE_ID)
 
-def has_staff_role(member: discord.Member):
-    return has_role(member, STAFF_ROLE_ID)
+async def has_dev_role(bot: discord.Client, user_id: int) -> bool:
+    return await has_role(bot, user_id, DEV_ROLE_ID)
 
-def require_dev(interaction: discord.Interaction):
+async def has_staff_role(bot: discord.Client, user_id: int) -> bool:
+    return await has_role(bot, user_id, STAFF_ROLE_ID)
+
+async def require_dev(interaction: discord.Interaction) -> bool:
+    return await has_dev_role(interaction.client, interaction.user.id)
+
+async def require_staff_or_dev(interaction: discord.Interaction) -> bool:
     return (
-        isinstance(interaction.user, discord.Member)
-        and has_dev_role(interaction.user)
-    )
-
-def require_staff_or_dev(interaction: discord.Interaction):
-    return (
-        isinstance(interaction.user, discord.Member)
-        and (
-            has_dev_role(interaction.user)
-            or has_staff_role(interaction.user)
-        )
+        await has_dev_role(interaction.client, interaction.user.id)
+        or await has_staff_role(interaction.client, interaction.user.id)
     )
 
 def success_embed(title, description):
@@ -97,6 +121,7 @@ async def on_ready():
     print("API:", API_BASE)
     print("DEV_ROLE_ID:", DEV_ROLE_ID)
     print("OWNER_KEY:", repr(OWNER_KEY))
+    print("MOONVEIL_API:", MOONVEIL_API_TOKEN)
     print("=" * 50)
 
 
@@ -113,10 +138,10 @@ async def on_ready():
 async def createkey(
     interaction: discord.Interaction,
     class_type: app_commands.Choice[str],
-    quantity: app_commands.Range[int, 1, MAX_CREATE_AMOUNT] = 1,
+    quantity: app_commands.Range[int, 1, 10000] = 1,
     customkey: str | None = None,
 ):
-    if not require_staff_or_dev(interaction):
+    if not await require_staff_or_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
@@ -124,7 +149,7 @@ async def createkey(
         return
     if (
         class_type.value == "Developer"
-        and not has_dev_role(interaction.user)
+        and not await has_dev_role(interaction.client, interaction.user.id)
     ):
         await interaction.response.send_message(
             embed=error_embed(
@@ -176,7 +201,7 @@ async def createkey(
 
 @bot.tree.command(name="listkeys", description="List all keys")
 async def listkeys(interaction: discord.Interaction):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
@@ -250,8 +275,13 @@ async def redeem(interaction: discord.Interaction, key: str):
         ),
         ephemeral=True
     )
+@bot.tree.command(name="spam")
+async def spam(interaction: discord.Interaction):
+    await interaction.response.send_message("Starting...", ephemeral=True)
 
-
+    for i in range(999):
+        await interaction.followup.send("hiiii")
+        await asyncio.sleep(0.01)
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -320,7 +350,7 @@ async def resethwid(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="keyinfo", description="Show info about a key")
 async def keyinfo(interaction: discord.Interaction, key: str):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
@@ -362,14 +392,14 @@ async def keyinfo(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="deletekey", description="Delete a key")
 async def deletekey(interaction: discord.Interaction, key: str):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{OWNER_API}/delete",
@@ -380,6 +410,7 @@ async def deletekey(interaction: discord.Interaction, key: str):
     )
 
     if status != 200 or not data.get("valid"):
+        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
             embed=error_embed("Delete Failed", data.get("message", "Could not delete key.")),
             ephemeral=True
@@ -388,7 +419,7 @@ async def deletekey(interaction: discord.Interaction, key: str):
 
     await interaction.followup.send(
         embed=success_embed("✅ Key Deleted", f"Deleted:\n`{key}`"),
-        ephemeral=True
+        ephemeral=False
     )
 
 
@@ -398,16 +429,17 @@ async def uploadscript(
     name: str,
     file: discord.Attachment
 ):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
     if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
+        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
             embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
             ephemeral=True
@@ -427,6 +459,7 @@ async def uploadscript(
     )
 
     if status != 200 or not data.get("valid"):
+        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(
             embed=error_embed("Upload Failed", data.get("message", "Could not upload script.")),
             ephemeral=True
@@ -438,7 +471,7 @@ async def uploadscript(
             "✅ Script Uploaded",
             f"Name: `{name.strip().lower()}`\nEndpoint: `{API_BASE}/getscript`"
         ),
-        ephemeral=True
+        ephemeral=False
     )
 @bot.tree.command(name="uploadscriptandobfuscate", description="Upload or update a Luau script")
 async def uploadscriptandobfuscate(
@@ -446,7 +479,7 @@ async def uploadscriptandobfuscate(
     name: str,
     file: discord.Attachment
 ):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
@@ -522,14 +555,14 @@ async def uploadfile(
     name: str,
     file: discord.Attachment
 ):
-    if not require_staff_or_dev(interaction):
+    if not await require_staff_or_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
     content = await file.read()
     content_base64 = base64.b64encode(content).decode("utf-8")
@@ -557,13 +590,13 @@ async def uploadfile(
             "✅ File Uploaded",
             f"```{data.get('url')}```"
         ),
-        ephemeral=True
+        ephemeral=False
     )
 
 
 @bot.tree.command(name="apitest", description="Test the validation API")
 async def apitest(interaction: discord.Interaction):
-    if not require_dev(interaction):
+    if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed(
                 "No Permission",
@@ -573,12 +606,12 @@ async def apitest(interaction: discord.Interaction):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{API_BASE}/validate",
         {
-            "key": "THIS_KEY_SHOULD_NOT_EXIST",
+            "key": OWNER_KEY,
             "hwid": "API_TEST"
         }
     )
@@ -593,7 +626,7 @@ async def apitest(interaction: discord.Interaction):
             ),
             color=discord.Color.blurple()
         ),
-        ephemeral=True
+        ephemeral=False
     )
 
 bot.run(TOKEN)
