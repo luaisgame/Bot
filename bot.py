@@ -155,7 +155,7 @@ async def createkey(
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/create",
@@ -192,7 +192,7 @@ async def createkey(
     embed.add_field(name="Quantity", value=str(len(created)), inline=True)
     embed.add_field(name="Created By", value=interaction.user.mention, inline=True)
 
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, ephemeral=False)
 
 
 @bot.tree.command(name="listkeys", description="List all keys")
@@ -204,7 +204,7 @@ async def listkeys(interaction: discord.Interaction):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/list",
@@ -247,7 +247,7 @@ async def listkeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/redeem",
@@ -273,7 +273,7 @@ async def redeem(interaction: discord.Interaction, key: str):
     )
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/mykeys",
@@ -313,7 +313,7 @@ async def mykeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
 async def resethwid(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{API_BASE}/reset",
@@ -346,7 +346,7 @@ async def keyinfo(interaction: discord.Interaction, key: str):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/keyinfo",
@@ -388,7 +388,7 @@ async def deletekey(interaction: discord.Interaction, key: str):
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     status, data = await api_post(
         f"{OWNER_API}/delete",
@@ -432,7 +432,7 @@ async def uploadscript(
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -487,7 +487,7 @@ async def uploadscriptandobfuscate(
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -566,7 +566,7 @@ async def uploadfile(
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
+    
 
     content = await file.read()
     content_base64 = base64.b64encode(content).decode("utf-8")
@@ -611,8 +611,6 @@ async def apitest(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
-    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/validate",
