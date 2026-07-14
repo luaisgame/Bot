@@ -155,7 +155,7 @@ async def createkey(
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{OWNER_API}/create",
@@ -204,7 +204,7 @@ async def listkeys(interaction: discord.Interaction):
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/list",
@@ -247,8 +247,6 @@ async def listkeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
-    
-
     status, data = await api_post(
         f"{API_BASE}/redeem",
         {
@@ -273,7 +271,7 @@ async def redeem(interaction: discord.Interaction, key: str):
     )
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/mykeys",
@@ -313,7 +311,7 @@ async def mykeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
 async def resethwid(interaction: discord.Interaction, key: str):
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/reset",
@@ -346,7 +344,7 @@ async def keyinfo(interaction: discord.Interaction, key: str):
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/keyinfo",
@@ -388,7 +386,7 @@ async def deletekey(interaction: discord.Interaction, key: str):
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{OWNER_API}/delete",
