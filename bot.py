@@ -186,6 +186,8 @@ async def createkey(
             embed=error_embed("Failed", "API returned no keys.")
         )
         return
+    
+    await interaction.response.defer(ephemeral=False)
 
     embed = success_embed(
         f"✅ Created {len(created)} Key{'s' if len(created) != 1 else ''}",
@@ -201,14 +203,14 @@ async def createkey(
 
 @bot.tree.command(name="listkeys", description="List all keys")
 async def listkeys(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
-        return
-
-    
+        return    
 
     status, data = await api_post(
         f"{OWNER_API}/list",
@@ -251,7 +253,7 @@ async def listkeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="redeem", description="Claim a key")
 async def redeem(interaction: discord.Interaction, key: str):
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/redeem",
@@ -284,7 +286,7 @@ async def spam(interaction: discord.Interaction):
         await asyncio.sleep(0.01)
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/mykeys",
@@ -324,7 +326,7 @@ async def mykeys(interaction: discord.Interaction):
 
 @bot.tree.command(name="resethwid", description="Reset HWID on one of your keys")
 async def resethwid(interaction: discord.Interaction, key: str):
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/reset",
@@ -350,6 +352,7 @@ async def resethwid(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="keyinfo", description="Show info about a key")
 async def keyinfo(interaction: discord.Interaction, key: str):
+    await interaction.response.defer(ephemeral=True)
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
@@ -392,12 +395,14 @@ async def keyinfo(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="deletekey", description="Delete a key")
 async def deletekey(interaction: discord.Interaction, key: str):
+    await interaction.response.defer(ephemeral=True)
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{OWNER_API}/delete",
@@ -440,6 +445,7 @@ async def uploadscript(
             ephemeral=True
         )
         return
+    await interaction.response.defer(ephemeral=False)
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -472,7 +478,8 @@ async def uploadscriptandobfuscate(
     interaction: discord.Interaction,
     name: str,
     file: discord.Attachment
-):
+):  
+    await interaction.response.defer(ephemeral=True)
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
@@ -575,7 +582,7 @@ async def uploadfile(
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=False)
 
     await interaction.followup.send(
         embed=success_embed(
@@ -598,7 +605,7 @@ async def apitest(interaction: discord.Interaction):
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{API_BASE}/validate",
