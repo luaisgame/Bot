@@ -1,10 +1,7 @@
-from builtins import print
 import os
 import base64
-from pickle import TRUE
 import aiohttp
 import discord
-import asyncio
 
 from dotenv import load_dotenv
 from discord.ext import commands
@@ -13,8 +10,8 @@ from discord import app_commands
 load_dotenv()
 
 TOKEN = os.getenv("Bot_Token")
-OWNER_KEY = os.getenv("MoonVeil_Api")
-MOONVEIL_API_TOKEN = os.getenv("Owner_Key")
+OWNER_KEY = os.getenv("Owner_Key")
+MOONVEIL_API_TOKEN = os.getenv("MoonVeil_Api")
 
 STAFF_ROLE_ID = 1458539044014391306
 DEV_ROLE_ID = 1458539079577899088
@@ -25,7 +22,7 @@ API_BASE = "https://luaisgame.com/api"
 OWNER_API = f"{API_BASE}/owner"
 
 if not TOKEN:
-    raise ValueError("DISCORD_TOKEN missing")
+    raise ValueError("Bot_Token missing")
 
 if not OWNER_KEY:
     raise ValueError("OWNER_KEY missing")
@@ -120,8 +117,6 @@ async def on_ready():
     print("User:", bot.user)
     print("API:", API_BASE)
     print("DEV_ROLE_ID:", DEV_ROLE_ID)
-    print("OWNER_KEY:", repr(OWNER_KEY))
-    print("MOONVEIL_API:", MOONVEIL_API_TOKEN)
     print("=" * 50)
 
 
@@ -159,7 +154,8 @@ async def createkey(
             ephemeral=True
         )
         return
-    
+
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/create",
@@ -186,8 +182,6 @@ async def createkey(
             embed=error_embed("Failed", "API returned no keys.")
         )
         return
-    
-    await interaction.response.defer(ephemeral=False)
 
     embed = success_embed(
         f"✅ Created {len(created)} Key{'s' if len(created) != 1 else ''}",
@@ -203,14 +197,14 @@ async def createkey(
 
 @bot.tree.command(name="listkeys", description="List all keys")
 async def listkeys(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
-        return    
+        return
+
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/list",
@@ -277,13 +271,6 @@ async def redeem(interaction: discord.Interaction, key: str):
         ),
         ephemeral=True
     )
-@bot.tree.command(name="spam")
-async def spam(interaction: discord.Interaction):
-    await interaction.response.send_message("Starting...", ephemeral=True)
-
-    for i in range(9999):
-        await interaction.followup.send("hiiii")
-        await asyncio.sleep(0.01)
 @bot.tree.command(name="mykeys", description="List your redeemed keys")
 async def mykeys(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -352,7 +339,6 @@ async def resethwid(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="keyinfo", description="Show info about a key")
 async def keyinfo(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
@@ -360,7 +346,7 @@ async def keyinfo(interaction: discord.Interaction, key: str):
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/keyinfo",
@@ -395,14 +381,14 @@ async def keyinfo(interaction: discord.Interaction, key: str):
 
 @bot.tree.command(name="deletekey", description="Delete a key")
 async def deletekey(interaction: discord.Interaction, key: str):
-    await interaction.response.defer(ephemeral=True)
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
             ephemeral=True
         )
         return
-    await interaction.response.defer(ephemeral=False)
+
+    await interaction.response.defer(ephemeral=True)
 
     status, data = await api_post(
         f"{OWNER_API}/delete",
@@ -440,12 +426,13 @@ async def uploadscript(
         return
 
     if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
-        await interaction.followup.send(
+        await interaction.response.send_message(
             embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
             ephemeral=True
         )
         return
-    await interaction.response.defer(ephemeral=False)
+
+    await interaction.response.defer(ephemeral=True)
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -478,8 +465,7 @@ async def uploadscriptandobfuscate(
     interaction: discord.Interaction,
     name: str,
     file: discord.Attachment
-):  
-    await interaction.response.defer(ephemeral=True)
+):
     if not await require_dev(interaction):
         await interaction.response.send_message(
             embed=error_embed("No Permission", "You need developer permissions."),
@@ -488,11 +474,20 @@ async def uploadscriptandobfuscate(
         return
 
     if not file.filename.lower().endswith((".lua", ".luau", ".txt")):
-        await interaction.followup.send(
+        await interaction.response.send_message(
             embed=error_embed("Invalid File", "Upload a `.lua`, `.luau`, or `.txt` file."),
             ephemeral=True
         )
         return
+
+    if not MOONVEIL_API_TOKEN:
+        await interaction.response.send_message(
+            embed=error_embed("Configuration Error", "MoonVeil_Api is missing."),
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -504,10 +499,10 @@ async def uploadscriptandobfuscate(
                 json=payload,
                 headers=headers
             ) as response:
-                return await response.text()
+                return response.status, await response.text()
 
 
-    response = await post(
+    obfuscation_status, response = await post(
         "https://moonveil.cc/api/v2/obf",
         {   
             "options": {
@@ -522,6 +517,16 @@ async def uploadscriptandobfuscate(
             "Authorization": f"Bearer { MOONVEIL_API_TOKEN }"
         }
     )
+
+    if obfuscation_status < 200 or obfuscation_status >= 300:
+        await interaction.followup.send(
+            embed=error_embed(
+                "Obfuscation Failed",
+                f"MoonVeil returned HTTP {obfuscation_status}: {response[:1000]}"
+            ),
+            ephemeral=True
+        )
+        return
 
     status, data = await api_post(
         f"{OWNER_API}/uploadscript",
@@ -561,6 +566,8 @@ async def uploadfile(
         )
         return
 
+    await interaction.response.defer(ephemeral=True)
+
     content = await file.read()
     content_base64 = base64.b64encode(content).decode("utf-8")
 
@@ -582,7 +589,7 @@ async def uploadfile(
         )
         return
 
-    await interaction.response.defer(ephemeral=False)
+    
 
     await interaction.followup.send(
         embed=success_embed(
