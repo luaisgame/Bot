@@ -432,7 +432,7 @@ async def uploadscript(
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -487,7 +487,7 @@ async def uploadscriptandobfuscate(
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     content_bytes = await file.read()
     content = content_bytes.decode("utf-8", errors="replace")
@@ -566,7 +566,7 @@ async def uploadfile(
         )
         return
 
-    
+    await interaction.response.defer(ephemeral=True)
 
     content = await file.read()
     content_base64 = base64.b64encode(content).decode("utf-8")
@@ -611,6 +611,8 @@ async def apitest(interaction: discord.Interaction):
             ephemeral=True
         )
         return
+
+    await interaction.response.defer(ephemeral=False)
 
     status, data = await api_post(
         f"{API_BASE}/validate",
